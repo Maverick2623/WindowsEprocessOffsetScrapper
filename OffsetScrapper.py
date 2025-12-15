@@ -7,7 +7,7 @@ HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
 
-# Authoritative URL → dwBuildNumber mapping (from your table)
+# dwBuildNumber -> Vergilius URL
 TARGETS = {
     26200: "https://www.vergiliusproject.com/kernels/x64/windows-11/25h2/_EPROCESS",
     26100: "https://www.vergiliusproject.com/kernels/x64/windows-11/24h2/_EPROCESS",
@@ -22,9 +22,7 @@ TARGETS = {
     19042: "https://www.vergiliusproject.com/kernels/x64/windows-10/20h2/_EPROCESS",
     19041: "https://www.vergiliusproject.com/kernels/x64/windows-10/2004/_EPROCESS",
 
-    # 1903 / 1909 share kernel layout
     18362: "https://www.vergiliusproject.com/kernels/x64/windows-10/1903/_EPROCESS",
-
     17763: "https://www.vergiliusproject.com/kernels/x64/windows-10/1809/_EPROCESS",
     17134: "https://www.vergiliusproject.com/kernels/x64/windows-10/1803/_EPROCESS",
     16299: "https://www.vergiliusproject.com/kernels/x64/windows-10/1709/_EPROCESS",
@@ -34,7 +32,6 @@ TARGETS = {
     10240: "https://www.vergiliusproject.com/kernels/x64/windows-10/1507/_EPROCESS",
 
     9600:  "https://www.vergiliusproject.com/kernels/x64/windows-8.1/update-1/_EPROCESS",
-    9200:  "https://www.vergiliusproject.com/kernels/x64/windows-8/rtm/_EPROCESS",
 }
 
 def extract_protection_offset(url):
@@ -60,16 +57,45 @@ def extract_protection_offset(url):
 
 
 def main():
+    cpp_lines = []
+    first = True
+
     for build in sorted(TARGETS.keys()):
         url = TARGETS[build]
         offset = extract_protection_offset(url)
 
+        # Console output (unchanged)
         if offset:
             print(f"build = {build}, 0xProtection = {offset}")
         else:
             print(f"build = {build}, 0xProtection = NOT_PRESENT")
 
+        # Generate C++ code
+        condition = "if" if first else "else if"
+        first = False
+
+        if offset:
+            cpp_lines.append(
+                f'{condition} (versionInfo.dwBuildNumber == {build}) {{\n'
+                f'    OxProtection = {offset};\n'
+                f'}}'
+            )
+        else:
+            cpp_lines.append(
+                f'{condition} (versionInfo.dwBuildNumber == {build}) {{\n'
+                f'    OxProtection = 0;\n'
+                f'}}'
+            )
+
         time.sleep(1)
+
+    cpp_lines.append("else {\n    OxProtection = 0;\n}")
+
+    # Write to code.txt
+    with open("code.txt", "w", encoding="utf-8") as f:
+        f.write("\n".join(cpp_lines))
+
+    print("\n[+] C++ offset resolver written to code.txt")
 
 
 if __name__ == "__main__":
