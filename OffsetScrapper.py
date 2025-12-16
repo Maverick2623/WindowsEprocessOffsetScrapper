@@ -32,70 +32,105 @@ TARGETS = {
     10240: "https://www.vergiliusproject.com/kernels/x64/windows-10/1507/_EPROCESS",
 
     9600:  "https://www.vergiliusproject.com/kernels/x64/windows-8.1/update-1/_EPROCESS",
+    9200:  "https://www.vergiliusproject.com/kernels/x64/windows-8/rtm/_EPROCESS",
 }
 
-def extract_protection_offset(url):
+
+def extract_offsets(url):
+    offsets = {
+        "Protection": None,
+        "UniqueProcessId": None,
+        "ActiveProcessLinks": None,
+    }
+
     r = requests.get(url, headers=HEADERS, timeout=15)
     if r.status_code != 200:
-        return None
+        return offsets
 
     soup = BeautifulSoup(r.text, "html.parser")
 
     for code in soup.find_all("code"):
         text = code.get_text()
 
-        # Match:
-        # struct _PS_PROTECTION Protection;  // 0x87a
-        match = re.search(
+        m = re.search(
             r"struct\s+_PS_PROTECTION\s+Protection\s*;.*?(0x[0-9a-fA-F]+)",
             text
         )
-        if match:
-            return match.group(1)
+        if m:
+            offsets["Protection"] = m.group(1)
 
-    return None
+        m = re.search(
+            r"VOID\s*\*\s*UniqueProcessId\s*;.*?(0x[0-9a-fA-F]+)",
+            text
+        )
+        if m:
+            offsets["UniqueProcessId"] = m.group(1)
+
+        m = re.search(
+            r"struct\s+_LIST_ENTRY\s+ActiveProcessLinks\s*;.*?(0x[0-9a-fA-F]+)",
+            text
+        )
+        if m:
+            offsets["ActiveProcessLinks"] = m.group(1)
+
+    return offsets
 
 
 def main():
-    cpp_lines = []
+    prot_lines = []
+    proc_lines = []
     first = True
 
     for build in sorted(TARGETS.keys()):
-        url = TARGETS[build]
-        offset = extract_protection_offset(url)
+        offsets = extract_offsets(TARGETS[build])
 
-        # Console output (unchanged)
-        if offset:
-            print(f"build = {build}, 0xProtection = {offset}")
-        else:
-            print(f"build = {build}, 0xProtection = NOT_PRESENT")
+        prot = offsets["Protection"]
+        pid  = offsets["UniqueProcessId"]
+        apl  = offsets["ActiveProcessLinks"]
 
-        # Generate C++ code
-        condition = "if" if first else "else if"
+        print(
+            f"build = {build}, "
+            f"0xProtection = {prot or 'NOT_PRESENT'}, "
+            f"UniqueProcessId = {pid or 'NOT_PRESENT'}, "
+            f"ActiveProcessLinks = {apl or 'NOT_PRESENT'}"
+        )
+
+        cond = "if" if first else "else if"
         first = False
 
-        if offset:
-            cpp_lines.append(
-                f'{condition} (versionInfo.dwBuildNumber == {build}) {{\n'
-                f'    OxProtection = {offset};\n'
-                f'}}'
-            )
-        else:
-            cpp_lines.append(
-                f'{condition} (versionInfo.dwBuildNumber == {build}) {{\n'
-                f'    OxProtection = 0;\n'
-                f'}}'
-            )
+        # ---- ProtectionOffset.txt ----
+        prot_lines.append(
+            f'{cond} (versionInfo.dwBuildNumber == {build}) {{\n'
+            f'    OxProtection = {prot if prot else "0"};\n'
+            f'}}'
+        )
+
+        # ---- ProcessOffsets.txt ----
+        proc_lines.append(
+            f'{cond} (versionInfo.dwBuildNumber == {build}) {{\n'
+            f'    myOffsets.uniqueProcessIDOffset = {pid if pid else "0"};\n'
+            f'    myOffsets.ActiveProcessLinkOffset = {apl if apl else "0"};\n'
+            f'}}'
+        )
 
         time.sleep(1)
 
-    cpp_lines.append("else {\n    OxProtection = 0;\n}")
+    prot_lines.append("else {\n    OxProtection = 0;\n}")
+    proc_lines.append(
+        "else {\n"
+        "    myOffsets.uniqueProcessIDOffset = 0;\n"
+        "    myOffsets.ActiveProcessLinkOffset = 0;\n"
+        "}"
+    )
 
-    # Write to code.txt
-    with open("code.txt", "w", encoding="utf-8") as f:
-        f.write("\n".join(cpp_lines))
+    with open("ProtectionOffset.txt", "w", encoding="utf-8") as f:
+        f.write("\n".join(prot_lines))
 
-    print("\n[+] C++ offset resolver written to code.txt")
+    with open("ProcessOffsets.txt", "w", encoding="utf-8") as f:
+        f.write("\n".join(proc_lines))
+
+    print("\n[+] Generated ProtectionOffset.txt")
+    print("[+] Generated ProcessOffsets.txt")
 
 
 if __name__ == "__main__":
