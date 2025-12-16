@@ -1,16 +1,12 @@
-Here’s the **updated `README.md` in Markdown**, reflecting the new **`code.txt` C/C++ code generation feature**, while keeping your original vibe and intent intact.
-
-You can **copy-paste this directly** into `README.md`.
-
----
-
 
 # 0xProtectOffsetScrapper
 
-A small **Python utility** to scrape the **`EPROCESS → Protection` offset** (`_PS_PROTECTION`) from  
+A small **Python utility** to scrape **`EPROCESS` offsets** from  
 👉 **https://www.vergiliusproject.com**
 
-This project has been **vibe coded for my own ease** to quickly pull the `0xProtection` offset across multiple Windows versions and kernel builds without manually browsing kernel structure pages.
+This project has been **vibe coded for my own ease** to quickly extract commonly used
+`EPROCESS` offsets across Windows versions and kernel builds, without manually browsing
+kernel structure pages.
 
 > Huge shout-out to **Vergilius Project** — their work is awesome.  
 > Please do visit and support them: **https://www.vergiliusproject.com**
@@ -20,14 +16,16 @@ This project has been **vibe coded for my own ease** to quickly pull the `0xProt
 ## 🔍 What this tool does
 
 - Scrapes `_EPROCESS` structure pages from **Vergilius Project**
-- Extracts the offset for:
+- Extracts the following offsets:
   ```c
   struct _PS_PROTECTION Protection;
+  VOID* UniqueProcessId;
+  struct _LIST_ENTRY ActiveProcessLinks;
 
 
-* Prints results on-screen in a readable format
-* **Generates ready-to-use C/C++ resolver code** in `code.txt`
-* Uses **real `dwBuildNumber` values**, not marketing versions
+* Prints results on-screen per build
+* Generates **ready-to-paste C/C++ resolver code** into separate files
+* Uses **real kernel build numbers (`dwBuildNumber`)**
 * Covers:
 
   * Windows 8 / 8.1
@@ -39,16 +37,14 @@ This project has been **vibe coded for my own ease** to quickly pull the `0xProt
 
 ## 🧠 Why this exists
 
-When doing **kernel research, reversing, red-team labs, driver auditing, or BYOVD analysis**, you often need:
+When doing **kernel research, driver auditing, red-team labs, BYOVD analysis, or EDR research**, you often need:
 
-* The correct `EPROCESS.Protection` offset
-* Mapped to the **actual kernel build number (`dwBuildNumber`)**
+* Accurate `EPROCESS` offsets
+* Mapped to the **actual kernel build number**
 * In a form that can be **directly pasted into C/C++ code**
 
-This script automates that process using **Vergilius as a reference source** and outputs both:
-
-* Human-readable results
-* Copy-paste-ready C/C++ logic
+This script automates that process using **Vergilius as a reference source** and produces
+both human-readable output and copy-paste-ready logic.
 
 ---
 
@@ -60,16 +56,13 @@ This script automates that process using **Vergilius as a reference source** and
    dwBuildNumber → Vergilius _EPROCESS URL
    ```
 2. Fetches the `_EPROCESS` page
-3. Matches this exact declaration:
+3. Matches exact struct declarations
+4. Extracts the hex offsets
+5. Produces:
 
-   ```c
-   struct _PS_PROTECTION Protection;
-   ```
-4. Extracts the hex offset from the same line
-5. Outputs:
-
-   * Console results
-   * A C/C++ `if / else if / else` resolver in `code.txt`
+   * Console output
+   * `ProtectionOffset.txt`
+   * `ProcessOffsets.txt`
 
 ---
 
@@ -95,49 +88,63 @@ python scraper.py
 ## 🖥️ Console output example
 
 ```text
-build = 17763, 0xProtection = 0x6fa
-build = 18362, 0xProtection = 0x6fa
-build = 19041, 0xProtection = 0x87a
-build = 20348, 0xProtection = 0x87a
-build = 22621, 0xProtection = 0x87a
+build = 17763, 0xProtection = 0x6fa, UniqueProcessId = 0x440, ActiveProcessLinks = 0x448
 ```
 
-If a build does not contain `_PS_PROTECTION`:
+If a field does not exist in a build:
 
 ```text
-build = 14393, 0xProtection = NOT_PRESENT
+build = 14393, 0xProtection = NOT_PRESENT, UniqueProcessId = 0x2e0, ActiveProcessLinks = 0x2e8
 ```
 
 ---
 
-## 📄 Generated file: `code.txt`
+## 📄 Generated files
 
-The script automatically creates a file named **`code.txt`** containing **valid C/C++ code** that you can directly paste into your function.
+### 1️⃣ `ProtectionOffset.txt`
 
-### Example `code.txt`
+Contains **only Protection offset logic**, suitable for PPL / protection checks.
 
 ```cpp
-if (versionInfo.dwBuildNumber == 17763) {
-    OxProtection = 0x6fa;
+if (versionInfo.dwBuildNumber == 9200) {
+    OxProtection = 0;
 }
-else if (versionInfo.dwBuildNumber == 18362) {
-    OxProtection = 0x6fa;
-}
-else if (versionInfo.dwBuildNumber == 19041) {
-    OxProtection = 0x87a;
+else if (versionInfo.dwBuildNumber == 9600) {
+    OxProtection = 0x67a;
 }
 else {
     OxProtection = 0;
 }
 ```
 
-### Guarantees
+✔ Valid C/C++
+✔ No syntax errors
+✔ Safe fallback
 
-* ✅ No syntax errors
-* ✅ Proper braces
-* ✅ No duplicate `if`
-* ✅ Safe fallback (`OxProtection = 0`)
-* ✅ Ready for kernel or user-mode use
+---
+
+### 2️⃣ `ProcessOffsets.txt`
+
+Contains **process-walking related offsets**.
+
+```cpp
+if (versionInfo.dwBuildNumber == 9200) {
+    myOffsets.uniqueProcessIDOffset = 0x2e0;
+    myOffsets.ActiveProcessLinkOffset = 0x2e8;
+}
+else if (versionInfo.dwBuildNumber == 9600) {
+    myOffsets.uniqueProcessIDOffset = 0x440;
+    myOffsets.ActiveProcessLinkOffset = 0x448;
+}
+else {
+    myOffsets.uniqueProcessIDOffset = 0;
+    myOffsets.ActiveProcessLinkOffset = 0;
+}
+```
+
+✔ Ready for EPROCESS traversal
+✔ Clean separation of concerns
+✔ Copy-paste safe
 
 ---
 
@@ -152,7 +159,7 @@ else {
 * Always **verify offsets with symbols** when building real tooling:
 
   ```text
-  dt nt!_EPROCESS Protection
+  dt nt!_EPROCESS
   ```
 
 This project is intended for:
